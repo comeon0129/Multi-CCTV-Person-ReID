@@ -1,0 +1,213 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <title>CCTV 스트리밍 클라이언트</title>
+    <style>
+      body {
+        font-family: sans-serif;
+        text-align: center;
+        margin-top: 20px;
+      }
+      video,
+      canvas {
+        width: 90%;
+        max-width: 400px;
+        border: 2px solid #ccc;
+        border-radius: 8px;
+        /* 전면 카메라(거울 모드)일 때 화면이 좌우 반전되어 보이도록 처리 */
+        transform: scaleX(-1);
+      }
+      #log {
+        margin-top: 15px;
+        font-weight: bold;
+        color: blue;
+      }
+      .btn-container {
+        margin: 15px;
+      }
+      button {
+        padding: 10px 20px;
+        font-size: 16px;
+        cursor: pointer;
+        margin: 0 5px;
+      }
+      #stopBtn {
+        background-color: #ff4d4d;
+        color: white;
+        border: none;
+        border-radius: 4px;
+      }
+      #startBtn {
+        background-color: #4caf50;
+        color: white;
+        border: none;
+        border-radius: 4px;
+      }
+      button:disabled {
+        background-color: #cccccc;
+        cursor: not-allowed;
+      }
+      /* 디버깅 텍스트 스타일 */
+      #debugInfo {
+        margin-top: 10px; 
+        font-size: 20px; 
+        font-weight: bold;
+        color: red;
+      }
+    </style>
+  </head>
+  <body>
+    <h2>CCTV 카메라 스트리밍</h2>
+
+    <video id="video" autoplay playsinline></video>
+    <canvas id="canvas" style="display: none"></canvas>
+
+    <div class="btn-container">
+      <button id="startBtn">스트리밍 시작</button>
+      <button id="stopBtn" disabled>스트리밍 종료</button>
+    </div>
+
+    <div id="debugInfo">현재 변화율: 0.00%</div>
+    <div id="log">상태: 대기 중</div>
+
+    <script>
+      const video = document.getElementById("video");
+      const canvas = document.getElementById("canvas");
+      const ctx = canvas.getContext("2d");
+      const logDiv = document.getElementById("log");
+      const debugInfo = document.getElementById("debugInfo");
+      const startBtn = document.getElementById("startBtn");
+      const stopBtn = document.getElementById("stopBtn");
+
+      let webSocket = null;
+      let intervalId = null;
+      let lastFrameData = null;
+
+      // 튜닝 파라미터 (이 숫자들을 조절하며 최적의 값을 찾습니다)
+      const CHECK_INTERVAL = 32; // 검사 간격 (픽셀 8개당 1개 검사)
+      const THRESHOLD = 80;      // 색상 변화 민감도
+      const MOTION_CRITERIA = 0.015; // 움직임 인정 비율 (현재 1.5% 이상 변해야 전송)
+
+      // 1. 카메라 시작 및 웹소켓 연결
+      startBtn.addEventListener("click", async () => {
+        logDiv.innerText = "상태: 카메라 및 웹소켓 연결 중...";
+        startBtn.disabled = true;
+        stopBtn.disabled = false;
+
+        try {
+          // [수정됨] 전면 카메라(셀카 모드) 사용
+          const stream = await navigator.mediaDevices.getUserMedia({
+            video: { facingMode: "user" },
+          });
+          video.srcObject = stream;
+
+          // ngrok 서버로 데이터 전송하기 위함 (frontend -> ngrok -> localhost)
+          const targetUrl = "wss://paddling-gauntlet-talisman.ngrok-free.dev/ws/stream";
+
+          webSocket = new WebSocket(targetUrl);
+
+          webSocket.onopen = () => {
+            logDiv.innerText = "상태: 연결 완료! 0.05초마다 추출 중...";
+            intervalId = setInterval(captureAndSend, 50);
+          };
+
+          webSocket.onclose = () => {
+            stopStreaming("웹소켓이 서버에 의해 종료되었습니다.");
+          };
+        } catch (err) {
+          console.error(err);
+          stopStreaming("에러: 카메라를 켜거나 서버에 연결할 수 없습니다.");
+        }
+      });
+
+      // 2. 스트리밍 종료 기능
+      stopBtn.addEventListener("click", () => {
+        stopStreaming("상태: 사용자가 스트리밍을 종료했습니다.");
+      });
+
+      function stopStreaming(message) {
+        if (intervalId) clearInterval(intervalId);
+        if (webSocket && webSocket.readyState === WebSocket.OPEN) {
+          webSocket.close();
+        }
+        if (video.srcObject) {
+          video.srcObject.getTracks().forEach((track) => track.stop());
+          video.srcObject = null;
+        }
+
+        logDiv.innerText = message;
+        debugInfo.innerText = "현재 변화율: 0.00%";
+        startBtn.disabled = false;
+        stopBtn.disabled = true;
+        lastFrameData = null;
+      }
+
+      // 3. 프레임 캡처 및 움직임 감지 알고리즘 (디버깅 추가)
+      function captureAndSend() {
+        if (!webSocket || webSocket.readyState !== WebSocket.OPEN) return;
+
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+        
+        // 전면 카메라 좌우 반전 처리해서 캔버스에 그리기
+        ctx.translate(canvas.width, 0);
+        ctx.scale(-1, 1);
+        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+        // 원상복구
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
+
+        const currentFrame = ctx.getImageData(0, 0, canvas.width, canvas.height);
+        const data = currentFrame.data;
+
+        let motionDetected = false;
+
+        if (lastFrameData) {
+          let changedPixels = 0;
+          for (let i = 0; i < data.length; i += CHECK_INTERVAL) {
+            const rDiff = Math.abs(data[i] - lastFrameData[i]);
+            const gDiff = Math.abs(data[i + 1] - lastFrameData[i + 1]);
+            const bDiff = Math.abs(data[i + 2] - lastFrameData[i + 2]);
+
+            if (rDiff + gDiff + bDiff > THRESHOLD) {
+              changedPixels++;
+            }
+          }
+
+          // 변화율 계산 및 화면 표시
+          const totalCheckedPixels = data.length / CHECK_INTERVAL;
+          const changeRatio = changedPixels / totalCheckedPixels;
+          const changePercent = (changeRatio * 100).toFixed(2); // 소수점 둘째자리까지
+
+          // 화면의 빨간색 텍스트 업데이트!
+          debugInfo.innerText = `현재 변화율: ${changePercent}%`;
+
+          // 변화율이 내가 설정한 기준(MOTION_CRITERIA)보다 높으면 전송!
+          if (changeRatio > MOTION_CRITERIA) {
+            motionDetected = true;
+          }
+        } else {
+          motionDetected = true; // 첫 프레임은 무조건 전송
+        }
+
+        lastFrameData = new Uint8ClampedArray(data);
+
+        if (motionDetected) {
+          const base64Image = canvas.toDataURL("image/jpeg", 0.5);
+          // 백엔드가 기다리고 있는 JSON 형태로 포장하기
+          const jsonPayload = {
+            cctvId: "cctv_1",                       // 실제 CCTV 기기 고유 번호 (하드코딩 예시)
+            locationId: "zone_A",                   // 이 CCTV가 비추는 구역 (하드코딩 예시)
+            timestamp: new Date().toISOString(),    // 사진이 찍힌 현재 시간 (예: 2026-05-27T02:15:30.123Z)
+            imageData: base64Image                  // 방금 캔버스에서 딴 Base64 이미지
+          };
+          // JSON.stringify()를 이용해 자바스크립트 객체를 텍스트 문자열로 바꿔서 전송!
+          webSocket.send(JSON.stringify(jsonPayload));
+
+          // 디버깅용으로 콘솔에 찍어보기
+          console.log(`[발송] ${jsonPayload.cctvId} 프레임 전송 완료 (${jsonPayload.timestamp})`);
+        }
+      }
+    </script>
+  </body>
+</html>

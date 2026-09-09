@@ -1,0 +1,33 @@
+spring:
+  rabbitmq:
+    host: fuji-01.lmq.cloudamqp.com
+    port: 5672
+    username: sfndrmbc
+    password: fOtelznhAaYtCb7_MyAHbuILCTiyoDcI
+    virtual-host: sfndrmbc
+
+  datasource:
+    # H2 URL 대신 PostgreSQL URL로 변경
+    url: jdbc:postgresql://localhost:5432/reid_db
+    username: reid_user
+    password: reid_password
+    driver-class-name: org.postgresql.Driver
+
+  #schema.sql 파일이 애플리케이션 실행시 항상 자동으로 실행되도록 해주는 설정
+  sql:
+    init:
+      mode: always
+
+  jpa:
+    # 1. Hibernate가 DB에 테이블을 만들도록 강제하는 설정
+    hibernate:
+      ddl-auto: update
+
+    # 2. 실행되는 SQL을 콘솔에서 눈으로 확인하기 위한 설정
+    show-sql: true
+    dialect: org.hibernate.dialect.PostgreSQLDialect
+
+  data:
+    redis:
+      host: localhost
+      port: 6379

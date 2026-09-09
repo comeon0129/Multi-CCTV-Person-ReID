@@ -1,0 +1,41 @@
+plugins {
+	id 'java'
+	id 'org.springframework.boot' version '4.0.6'
+	id 'io.spring.dependency-management' version '1.1.7'
+}
+
+group = 'com.graduation'
+version = '0.0.1-SNAPSHOT'
+
+repositories {
+	mavenCentral()
+}
+
+dependencies {
+	implementation 'org.springframework.boot:spring-boot-starter-amqp'
+	implementation 'org.springframework.boot:spring-boot-starter-webmvc'
+	implementation 'org.springframework.boot:spring-boot-starter-websocket'
+	implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
+
+	// Lombok
+	compileOnly 'org.projectlombok:lombok'
+	annotationProcessor 'org.projectlombok:lombok'
+
+	// PostgreSQL 및 pgvector
+	implementation 'org.postgresql:postgresql'
+	implementation 'com.pgvector:pgvector:0.1.4'
+
+	// JSON
+	implementation 'com.fasterxml.jackson.core:jackson-databind'
+
+	// Test
+	testImplementation 'org.springframework.boot:spring-boot-starter-test'
+
+	developmentOnly 'org.springframework.boot:spring-boot-devtools'
+
+	implementation 'org.springframework.boot:spring-boot-starter-data-redis'
+}
+
+test {
+	useJUnitPlatform()
+}

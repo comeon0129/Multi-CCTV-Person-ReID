@@ -1,0 +1,32 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+
+# Model weights (download at runtime — do not commit)
+*.pt
+*.pth
+*.pth.tar
+*.onnx
+*.weights
+weights/
+
+# IDE / OS
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+
+# Dataset files
+ai-server/data/
+
+# Feature/embedding caches (regenerable, can reach GB scale)
+ai-server/research/cache/
+
+# Logs & temp
+*.log
+
+# Local-only project notes
+PROJECT_STATUS.md

@@ -1,0 +1,13 @@
+fastapi
+uvicorn[standard]
+python-multipart
+ultralytics
+torch
+torchvision
+Pillow
+numpy
+pyyaml
+gdown
+tensorboard
+# torchreid: pip install git+https://github.com/KaiyangZhou/deep-person-reid.git
+torchreid

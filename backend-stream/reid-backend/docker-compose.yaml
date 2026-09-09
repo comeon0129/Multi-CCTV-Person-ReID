@@ -1,0 +1,25 @@
+services:
+  postgres-vector:
+    image: pgvector/pgvector:pg16  # PostgreSQL 16 버전에 pgvector가 설치된 공식 이미지
+    container_name: reid-postgres
+    environment:
+      POSTGRES_USER: reid_user      # DB 접속 아이디
+      POSTGRES_PASSWORD: reid_password  # DB 접속 비밀번호 
+      POSTGRES_DB: reid_db          # 생성될 데이터베이스 이름
+      TZ: Asia/Seoul                # 타임존 설정 (한국 시간)
+    ports:
+      - "5432:5432"                 # 로컬 PC의 5432 포트와 컨테이너의 5432 포트를 연결
+    volumes:
+      - reid-postgres-data:/var/lib/postgresql/data # DB 데이터 영구 저장 (컨테이너가 꺼져도 데이터 유지)
+    restart: always
+  redis:
+    image: redis:alpine #Alpine 버전은 이미지 용량이 작아 배포 속도가 빠르고 불필요한 패키지가 없어 보안 취약점을 최소화 할 수 있는 실무 표준
+    container_name: reid-redis
+    ports:
+      - "6379:6379" #로컬 PC의 6379번 포트와 컨테이너의 6379번 포트 연결
+    restart: always
+
+volumes:
+  reid-postgres-data:
+
+

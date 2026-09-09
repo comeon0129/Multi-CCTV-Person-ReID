@@ -1,0 +1,27 @@
+yolo:
+  model: yolo26n.pt        # nano(n) / small(s) / medium(m) / large(l) / xlarge(x)
+  confidence: 0.25         # detection confidence threshold
+  iou: 0.45                # NMS IoU threshold
+
+reid:
+  model: bot
+  weights: reid_core/checkpoints/bot_best.pth
+  device: auto             # auto / cpu / cuda
+  dim_reduction:
+    enabled: true                                # false: 기존 방식(BoT 원본 2048차원) 그대로 사용
+    path: reid_core/checkpoints/pca_128.npz    # fit_pca.py --dim 128 로 생성한 아티팩트
+  batch:
+    max_size: 16      # 한 번의 YOLO/ReID forward에 묶을 최대 프레임 수 (prefetch_count와 맞춰둠)
+    max_wait_ms: 30    # 이 시간 안에 max_size가 안 차도 지금까지 모인 프레임으로 바로 처리
+
+rabbitmq:
+  host: fuji.lmq.cloudamqp.com
+  port: 5671
+  username: sfndrmbc
+  password: fOtelznhAaYtCb7_MyAHbuILCTiyoDcI
+  vhost: sfndrmbc
+  ssl: true
+  input_queue: ai.image.queue
+  output_queue: reid.result.queue
+  prefetch_count: 16       # ack 안 된 메시지를 몇 개까지 미리 받아둘지 (1이면 프레임마다 ack RTT를 기다림)
+  publish_grouped: false   # true면 detections 배열로 프레임당 1회 발행 (schemaVersion 2). false(기본값) = 검출 인원수만큼 반복 발행(schemaVersion 1)
