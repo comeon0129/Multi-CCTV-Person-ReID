@@ -6,9 +6,6 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
-import java.util.List;
-
-
 public interface ReidResultRepository extends JpaRepository<ReidResultEntity, Long> {
 
     // 1. 반환 타입을 List가 아닌 단일 객체(NearestPerson)로 변경

@@ -1,5 +1,6 @@
 package com.graduation.reid_backend.config;
 
+import com.graduation.reid_backend.handler.DashboardWebSocketHandler;
 import com.graduation.reid_backend.handler.VideoFrameHandler;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Bean;
@@ -15,12 +16,16 @@ import org.springframework.web.socket.server.standard.ServletServerContainerFact
 public class WebSocketConfig implements WebSocketConfigurer {
 
     private final VideoFrameHandler videoFrameHandler;
+    private final DashboardWebSocketHandler dashboardWebSocketHandler;
 
     @Override
     public void registerWebSocketHandlers(WebSocketHandlerRegistry registry) {
         //프론트엔드가 ws://주소/ws/stream 에 들어오면, 무조건 videoFrameHandler 에게 연결하는 로직
         registry.addHandler(videoFrameHandler, "/ws/stream")
                 .setAllowedOrigins("*"); //보안정책인데, 어느 도메인에서 요청이 오던 다 받아준다는 뜻
+
+        registry.addHandler(dashboardWebSocketHandler, "/ws/dashboard")
+                .setAllowedOrigins("*");
     }
     // 톰캣은 기본적으로 웹소켓으로 들어오는 텍스트 메시지를 무조건 8kb까지밖에 안받음
     // 웹소켓이 한 번에 받을 수 있는 데이터 크기 제한을 늘려주기!

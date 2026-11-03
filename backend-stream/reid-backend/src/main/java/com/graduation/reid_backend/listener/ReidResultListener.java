@@ -13,9 +13,12 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.amqp.rabbit.annotation.Queue;
 import org.springframework.amqp.rabbit.annotation.RabbitListener;
 import org.springframework.stereotype.Component;
+import com.graduation.reid_backend.handler.DashboardWebSocketHandler;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 
-import java.util.ArrayList;
 import java.util.List;
+// [추가] 실시간 TPS 카운트를 위한 패키지
+import java.util.concurrent.atomic.AtomicInteger;
 
 @Slf4j
 @Component
@@ -25,7 +28,12 @@ public class ReidResultListener {
     private final ObjectMapper objectMapper; // JSON ➔ 자바객체 변환기
     private final ReidResultRepository reidResultRepository; // DB에 저장할 레포지토리
     private final ReidService reidService;
+    private final DashboardWebSocketHandler dashboardWebSocketHandler; //대시보드 핸들러
 
+    // [추가] 실시간 TPS 측정을 위한 변수들
+    private final AtomicInteger processedCount = new AtomicInteger(0);
+    private long lastTpsCalcTime = System.currentTimeMillis();
+    private int currentTps = 0;
 
      // AI 서버가 결과를 던져주는 큐(reid.result.queue)를 실시간으로 감시하는 Listener
      //메시지가 큐에 들어오는 순간 이 메소드가 자동으로 즉시 깨어나서 실행.
@@ -59,6 +67,7 @@ public class ReidResultListener {
             int personCount = 0;
 
             // 2. 통합된 리스트(1명이든 N명이든)를 순회하며 개별 처리
+            // [추가] 프레임 내 여러 인물을 각각 개별적으로 대시보드에 전송하기 위해 루프 수정
             for (DetectionDto d : detections) {
                 //2. 인물 검색 서비스 호출 및 식별 ID 부여
                 String assignedPersonId = reidService.findPersonId(d.getVectorData(),dto.getLocationId());
@@ -80,6 +89,21 @@ public class ReidResultListener {
                 // 4. 데이터베이스에 저장
                 reidResultRepository.save(entity);
                 personCount++;
+                processedCount.incrementAndGet(); // [추가] 처리한 인물 수 1 증가 (TPS 계산용)
+
+                // [추가] 인물 1명 감지될 때마다 대시보드 화면 목록에 추가하도록 개별 전송
+                try {
+                    ObjectNode dashboardData = objectMapper.createObjectNode();
+                    ObjectNode detectionData = objectMapper.createObjectNode();
+                    detectionData.put("personId", assignedPersonId);
+                    detectionData.put("cctvId", dto.getCctvId());
+                    detectionData.put("timestamp", dto.getTimestamp());
+                    detectionData.put("imageData", d.getImageData());
+                    dashboardData.set("detection", detectionData);
+                    dashboardWebSocketHandler.broadcast(objectMapper.writeValueAsString(dashboardData));
+                } catch (Exception e) {
+                    log.error("대시보드 인물 개별 전송 실패", e);
+                }
             }
 
             long endTime = System.currentTimeMillis();
@@ -106,6 +130,23 @@ public class ReidResultListener {
                 log.info("   ├─ DB 검색 및 저장 시간: {}ms", dbAndBackendDuration);
                 log.info("   └─ 네트워크 및 큐 왕복 대기: {}ms", networkAndQueueDuration);
                 log.info("=================================================");
+
+                // [추가] 1초마다 진짜 로컬 TPS를 계산하여 대시보드 지표 갱신
+                long now = System.currentTimeMillis();
+                if (now - lastTpsCalcTime >= 1000) {
+                    // 1초 동안 쌓인 카운트를 가져오고 다시 0으로 리셋
+                    currentTps = processedCount.getAndSet(0);
+                    lastTpsCalcTime = now;
+
+                    ObjectNode metricsData = objectMapper.createObjectNode();
+                    metricsData.put("tps", currentTps); // 실제 1초간 처리한 로컬 TPS
+                    metricsData.put("latency", totalE2EDuration);
+
+                    metricsData.put("cacheHit", reidService.getCacheHitRate());
+                    metricsData.put("dbCpu", getDbCpuUsage());
+
+                    dashboardWebSocketHandler.broadcast(objectMapper.writeValueAsString(metricsData));
+                }
             }
 
 
@@ -113,4 +154,19 @@ public class ReidResultListener {
             log.error("AI 서버가 보낸 JSON 규격이 맞지 않거나 로직 처리 실패: {}", e.getMessage(), e);
         }
     }
+
+    // [추가] 윈도우 cmd를 통해 docker stats 명령어를 실행하고 CPU 값을 텍스트로 긁어오는 메소드
+    private String getDbCpuUsage() {
+        try {
+            // reid-postgres 컨테이너의 CPU 사용률만 딱 잘라서 가져오는 도커 명령어
+            Process process = Runtime.getRuntime().exec("cmd.exe /c docker stats reid-postgres --no-stream --format \"{{.CPUPerc}}\"");
+            java.io.BufferedReader reader = new java.io.BufferedReader(new java.io.InputStreamReader(process.getInputStream()));
+            String cpu = reader.readLine(); // 예: "0.15%"
+            return (cpu != null && !cpu.isEmpty()) ? cpu : "0.00%";
+        } catch (Exception e) {
+            log.error("Docker CPU 지표 수집 실패", e);
+            return "N/A";
+        }
+    }
+
 }

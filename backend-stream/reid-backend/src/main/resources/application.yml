@@ -8,7 +8,7 @@ spring:
 
   datasource:
     # H2 URL 대신 PostgreSQL URL로 변경
-    url: jdbc:postgresql://localhost:5432/reid_db
+    url: jdbc:postgresql://localhost:5433/reid_db
     username: reid_user
     password: reid_password
     driver-class-name: org.postgresql.Driver
@@ -19,6 +19,7 @@ spring:
       mode: always
 
   jpa:
+    defer-datasource-initialization: true
     # 1. Hibernate가 DB에 테이블을 만들도록 강제하는 설정
     hibernate:
       ddl-auto: update

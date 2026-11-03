@@ -11,6 +11,7 @@ import java.util.Map;
 import java.util.UUID;
 import org.springframework.data.redis.core.RedisTemplate;
 import java.time.Duration;
+import java.util.concurrent.atomic.AtomicInteger;
 
 @Slf4j
 @Service
@@ -20,13 +21,19 @@ public class ReidService {
     private final ReidResultRepository repository;
     private final RedisTemplate<String, Object> redisTemplate;
 
-    private static final double DISTANCE_THRESHOLD = 0.5 ;
+    private static final double DISTANCE_THRESHOLD = 0.35 ;
 
     //Redis에 저장할 Key이름의 접두사 상수(나중에 key 이름 들이 뒤죽박죽 섞이면 관리불가)
     //도메인:목적:세부구분 형태로 하는게 기본 관례
     private static final String CACHE_KEY_PREFIX = "reid:location";
 
+
+    private final AtomicInteger totalQueries = new AtomicInteger(0);
+    private final AtomicInteger cacheHits = new AtomicInteger(0);
+
     public String findPersonId(float[] newVector, String locationId) {
+        totalQueries.incrementAndGet(); // 시작할 때 무조건 1 증가
+
         // 1. Redis에서 찾을 Key 이름 생성 (예: "reid:location:zone_A")
         String redisKey = CACHE_KEY_PREFIX + locationId;
 
@@ -66,6 +73,7 @@ public class ReidService {
 
         //4. 찾은 가장 가까운 사람이 임계치(threshold) 이내면 Cache Hit
         if (bestMatchPersonId != null && minDistance <= DISTANCE_THRESHOLD) {
+            cacheHits.incrementAndGet(); //캐시 히트 시 1증가
             log.info("[Cache Hit] Redis 메모리에서 인물 매칭 성공! ID: {}, 거리: {}", bestMatchPersonId, minDistance);
 
             // 방금 또 카메라에 찍혔으므로, 이 구역(locationId) 캐시 데이터의 수명을 다시 10초로 연장
@@ -103,5 +111,11 @@ public class ReidService {
         log.info("[Redis 업데이트 완료] 구역: {}, ID: {} - 캐시 10초 수명으로 저장됨", locationId, finalPersonId);
 
         return finalPersonId;
+    }
+
+    public double getCacheHitRate() {
+        int total = totalQueries.get();
+        if (total == 0) return 0.0;
+        return Math.round(((double) cacheHits.get() / total * 100) * 10.0) / 10.0;
     }
 }

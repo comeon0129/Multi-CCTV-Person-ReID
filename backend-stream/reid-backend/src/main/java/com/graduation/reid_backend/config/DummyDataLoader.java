@@ -24,7 +24,7 @@ public class DummyDataLoader implements CommandLineRunner { //이 인터페이�
             return;
         }
 
-        int totalDataSize = 500000; // 목표 데이터: 50만 건
+        int totalDataSize = 10000; // 목표 데이터: 50만 건
         int batchSize = 10000;      // 1만 건씩 쪼개서 저장 (메모리 보호)
         log.warn("병목 성능 측정을 위한 {}건의 더미 데이터 생성을 시작합니다.",totalDataSize);
         Random random = new Random();

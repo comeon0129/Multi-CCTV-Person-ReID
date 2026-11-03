@@ -1,0 +1,244 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <title>CCTV Person Re-ID Dashboard</title>
+    <!-- Tailwind CSS: 별도의 CSS 파일 없이 HTML 태그 안에 'class="bg-gray-900"' 처럼 
+         글자만 적어주면 알아서 디자인을 입혀주는 도구 -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Chart.js : TPS 실시간 꺾은선 그래프를 아주 쉽게 그려주는 자바스크립트 라이브러리 -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  </head>
+  <!-- bg-gray-900: 전체 배경을 어두운 회색으로, text-white: 글자는 흰색으로, p-6: 전체 화면에 padding 주기-->
+  <body class="bg-gray-900 text-white p-6">
+    <!-- max-w-7xl mx-auto: 화면 중앙 정렬 및 최대 너비 제한 -->
+    <div class="max-w-7xl mx-auto">
+      <h1 class="text-3xl font-bold mb-8 text-blue-400">
+        실시간 다중 CCTV 객체 추적 모니터링
+      </h1>
+
+      <!-- ========================================== -->
+      <!-- [UI 영역 1] 상단: 4개의 주요 성능 지표 카드 -->
+      <!-- ========================================== -->
+      <!-- grid grid-cols-4: 화면을 가로로 4등분해서 카드 나란히 배치 -->
+      <div class="grid grid-cols-4 gap-6 mb-8">
+        <div class="bg-gray-800 p-6 rounded-lg shadow border border-gray-700">
+          <h3 class="text-gray-400 text-sm font-semibold mb-2">
+            현재 처리량 (TPS)
+          </h3>
+          <!-- id="tps-value": 나중에 자바스크립트에서 이 id를 찾아 숫자 집어넣기 -->
+          <p id="tps-value" class="text-3xl font-bold text-green-400">0</p>
+        </div>
+        <div class="bg-gray-800 p-6 rounded-lg shadow border border-gray-700">
+          <h3 class="text-gray-400 text-sm font-semibold mb-2">
+            E2E 평균 레이턴시
+          </h3>
+          <p id="latency-value" class="text-3xl font-bold text-yellow-400">
+            0 ms
+          </p>
+        </div>
+        <div class="bg-gray-800 p-6 rounded-lg shadow border border-gray-700">
+          <h3 class="text-gray-400 text-sm font-semibold mb-2">
+            Redis Cache Hit 비율
+          </h3>
+          <p id="cache-hit-value" class="text-3xl font-bold text-blue-400">
+            0.0 %
+          </p>
+        </div>
+        <div class="bg-gray-800 p-6 rounded-lg shadow border border-gray-700">
+          <h3 class="text-gray-400 text-sm font-semibold mb-2">
+            DB CPU 사용률
+          </h3>
+          <p id="cpu-value" class="text-3xl font-bold text-red-400">0 %</p>
+        </div>
+      </div>
+
+      <!-- ========================================== -->
+      <!-- [UI 영역 2] 하단: 왼쪽 그래프 + 오른쪽 실시간 감지 목록 -->
+      <!-- ========================================== -->
+      <!-- grid-cols-3: 화면 3등분 -->
+      <div class="grid grid-cols-3 gap-6">
+        <!-- [왼쪽 그래프] col-span-2: 3칸 중 2칸을 차지하게 넓게 만듬. -->
+        <div
+          class="col-span-2 bg-gray-800 p-6 rounded-lg shadow border border-gray-700"
+        >
+          <h3 class="text-lg font-semibold mb-4">실시간 TPS 추이</h3>
+          <!-- Chart.js가 그림을 그릴 캔버스(도화지) 영역 -->
+          <canvas id="tpsChart" height="100"></canvas>
+        </div>
+
+        <!-- [오른쪽 목록] 남은 1칸을 차지하며, overflow-hidden으로 목록이 넘치면 스크롤 내릴 수 있게 제작 -->
+        <div
+          class="bg-gray-800 p-6 rounded-lg shadow border border-gray-700 overflow-hidden flex flex-col h-96"
+        >
+          <h3 class="text-lg font-semibold mb-4">최근 감지 인물</h3>
+          <!-- id="detection-list": 자바스크립트가 새로운 사람이 감지될 때마다 여기에 <div>를 끼워 넣기 -->
+          <div
+            id="detection-list"
+            class="flex-1 overflow-y-auto space-y-3 pr-2"
+          >
+            <!-- JS로 리스트가 추가되는 영역 -->
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ========================================== -->
+    <!-- [UI 영역 3] 숨겨진 상세 정보 모달 (팝업창) -->
+    <!-- ========================================== -->
+    <!-- hidden 클래스: 평소에는 화면에 보이지 않게 숨겨두기 -->
+    <div
+      id="detail-modal"
+      class="fixed inset-0 bg-black bg-opacity-70 hidden flex items-center justify-center"
+    >
+      <!-- 팝업창 본체 -->
+      <div
+        class="bg-gray-800 p-6 rounded-lg max-w-lg w-full border border-gray-600 relative"
+      >
+        <!-- X 버튼: 누르면 closeModal() 자바스크립트 함수가 실행되어 창이 다시 숨겨짐 -->
+        <button
+          onclick="closeModal()"
+          class="absolute top-3 right-4 text-gray-400 hover:text-white text-2xl"
+        >
+          &times;
+        </button>
+        <h2 class="text-2xl font-bold mb-4" id="modal-person-id">Person ID</h2>
+        <p class="text-gray-300 mb-2">
+          포착된 CCTV:
+          <span id="modal-cctv-id" class="text-white font-semibold"></span>
+        </p>
+        <p class="text-gray-300 mb-4">
+          감지 시간:
+          <span id="modal-time" class="text-white font-semibold"></span>
+        </p>
+
+        <!-- 인물 이미지 (바운딩 박스 포함)가 들어갈 자리 -->
+        <div
+          class="bg-gray-900 h-64 rounded flex items-center justify-center border border-gray-700 overflow-hidden"
+        >
+          <img
+            id="modal-image"
+            src=""
+            alt="Detected Person"
+            class="max-h-full max-w-full object-contain"
+          />
+        </div>
+      </div>
+    </div>
+
+    <!-- ========================================== -->
+    <!-- [로직 영역] 자바스크립트 (동작 제어) -->
+    <!-- ========================================== -->
+    <script>
+      // 1. TPS 차트 초기화 (Chart.js 문법)
+      const ctx = document.getElementById("tpsChart").getContext("2d");
+      const tpsChart = new Chart(ctx, {
+        type: "line", // 꺾은선 그래프
+        data: {
+          labels: [], // X축 (시간)
+          datasets: [
+            {
+              label: "TPS",
+              data: [], // Y축 (TPS 수치)
+              borderColor: "rgb(74, 222, 128)", // 초록색 선
+              tension: 0.3, // 선을 살짝 둥글게(곡선) 처리
+            },
+          ],
+        },
+        options: {
+          responsive: true,
+          scales: { x: { display: false }, y: { beginAtZero: true } },
+        },
+      });
+
+      // 2. 모달(팝업창) 열기/닫기 함수
+      // 오른쪽 목록에서 인물을 클릭하면 해당 함수 실행
+      function openModal(personId, cctvId, timestamp, imageBase64) {
+        // 클릭한 사람의 데이터를 모달창의 각 id 위치에 집어넣기
+        document.getElementById("modal-person-id").innerText = personId;
+        document.getElementById("modal-cctv-id").innerText = cctvId;
+        document.getElementById("modal-time").innerText = timestamp;
+
+        
+        document.getElementById('modal-image').src = `data:image/jpeg;base64,${imageBase64}`;
+
+        // 'hidden' 이라는 숨김 클래스를 제거해서 화면에 나타날 수 있게 설정
+        document.getElementById("detail-modal").classList.remove("hidden");
+      }
+
+      function closeModal() {
+        // 다시 'hidden' 클래스를 붙여서 화면에서 숨깁니다.
+        document.getElementById("detail-modal").classList.add("hidden");
+      }
+
+      // 3. 실제 백엔드 WebSocket 연결
+        const ws = new WebSocket('ws://localhost:8080/ws/dashboard');
+        
+        ws.onopen = function() {
+            console.log("대시보드 백엔드 연결 성공!");
+        };
+
+        ws.onmessage = function(event) {
+            // 백엔드가 던져준 JSON 문자열을 자바스크립트 객체로 변환
+            const data = JSON.parse(event.data);
+            // 화면 업데이트 함수로 전달!
+            updateDashboard(data);
+        };
+
+        ws.onclose = function() {
+            console.log("대시보드 연결 끊김. 서버를 확인하세요.");
+        };
+
+
+      // 4. 대시보드 화면 업데이트 로직
+      function updateDashboard(data) {
+        // [수정] 데이터에 tps 값이 있을 때만 성능 지표와 차트를 업데이트 (1초마다 실행)
+        if (data.tps !== undefined) {
+          document.getElementById("tps-value").innerText = data.tps;
+          document.getElementById("latency-value").innerText = data.latency + " ms";
+          document.getElementById("cache-hit-value").innerText = data.cacheHit + " %";
+          document.getElementById("cpu-value").innerText = data.dbCpu; // 백엔드에서 %를 붙여서 줍니다.
+
+        // 차트 업데이트 (최대 20개 데이터 유지)
+        tpsChart.data.labels.push("");
+        tpsChart.data.datasets[0].data.push(data.tps);
+        if (tpsChart.data.labels.length > 20) {
+          tpsChart.data.labels.shift();
+          tpsChart.data.datasets[0].data.shift();
+        }
+        tpsChart.update();
+      }
+
+        // [리스트 업데이트] 감지된 인물 데이터가 있다면 오른쪽 목록에 추가
+        if (data.detection) {
+          const list = document.getElementById("detection-list");
+
+          // 새로운 <div> 태그(박스)를 메모리상에 하나 만들기
+          const item = document.createElement("div");
+          item.className =
+            "bg-gray-700 p-3 rounded cursor-pointer hover:bg-gray-600 transition";
+
+          // 박스를 마우스로 클릭하면 openModal() 함수가 실행되도록 이벤트 걸어주기
+          item.onclick = () =>
+            openModal(
+              data.detection.personId,
+              data.detection.cctvId,
+              data.detection.timestamp,
+              data.detection.imageData,
+            );
+
+          // 박스 안에 들어갈 HTML(글자들)을 채워 넣기
+          item.innerHTML = `
+                    <p class="text-white font-bold text-sm">${data.detection.personId}</p>
+                    <p class="text-gray-400 text-xs">${data.detection.cctvId} | ${data.detection.timestamp}</p>
+                `;
+          // list.prepend: 리스트의 맨 '아래'가 아니라 맨 '위'에 새로운 사람을 끼워 넣기(최신순 정렬)
+          list.prepend(item);
+
+          // 리스트가 너무 길어지면 브라우저가 느려지므로, 15개가 넘어가면 맨 아래(오래된) 데이터를 삭제
+          if (list.children.length > 15) list.removeChild(list.lastChild); // 최대 15개 유지
+        }
+      }
+    </script>
+  </body>
+</html>

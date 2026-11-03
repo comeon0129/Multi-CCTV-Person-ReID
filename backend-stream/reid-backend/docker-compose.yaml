@@ -8,7 +8,7 @@ services:
       POSTGRES_DB: reid_db          # 생성될 데이터베이스 이름
       TZ: Asia/Seoul                # 타임존 설정 (한국 시간)
     ports:
-      - "5432:5432"                 # 로컬 PC의 5432 포트와 컨테이너의 5432 포트를 연결
+      - "5433:5432"                 # 로컬 PC의 5433 포트와 컨테이너의 5432 포트를 연결
     volumes:
       - reid-postgres-data:/var/lib/postgresql/data # DB 데이터 영구 저장 (컨테이너가 꺼져도 데이터 유지)
     restart: always
